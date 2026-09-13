@@ -2499,6 +2499,67 @@ fn hidden_named_workspace_is_offscreen_in_overview_geo() {
     );
 }
 
+fn visible_strip_slots(mon: &Monitor<TestWindow>) -> usize {
+    mon.workspaces_render_geo()
+        .take(mon.workspaces.len())
+        .filter(|geo| geo.loc.y > -10_000.)
+        .count()
+}
+
+#[test]
+fn hidden_named_do_not_give_host_monitor_extra_empty() {
+    let config = Config::parse_mem(
+        r#"
+        layout {
+            empty-workspace-above-first
+        }
+        workspace "code" {
+            hidden
+        }
+        workspace "github" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(&mut layout, [Op::AddOutput(1), Op::AddOutput(2)]);
+
+    let slots: Vec<_> = layout.monitors().map(visible_strip_slots).collect();
+    assert_eq!(
+        slots,
+        vec![1, 1],
+        "both monitors must show one empty slot when only hidden named workspaces exist"
+    );
+}
+
+#[test]
+fn switching_to_hidden_named_workspace_animates() {
+    let mut layout = check_ops([Op::AddOutput(1)]);
+    layout.ensure_named_workspace(&WorkspaceConfig {
+        name: WorkspaceName("hidden".into()),
+        open_on_output: None,
+        hidden: true,
+        layout: None,
+    });
+    layout.verify_invariants();
+
+    let (idx, _) = layout.find_workspace_by_name("hidden").unwrap();
+    layout.switch_workspace(idx);
+
+    let mon = layout.active_monitor_ref().unwrap();
+    assert!(
+        mon.workspace_switch.is_some(),
+        "focusing a hidden named workspace must animate like any other switch"
+    );
+    assert_eq!(
+        mon.workspaces[mon.active_workspace_idx]
+            .name()
+            .map(String::as_str),
+        Some("hidden")
+    );
+}
+
 #[test]
 fn config_change_updates_cached_sizes() {
     let mut config = Config::default();

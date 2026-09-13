@@ -327,6 +327,12 @@ impl<W: LayoutElement> Monitor<W> {
         let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
         workspaces.push(ws);
 
+        if ws_id_to_activate.is_none() {
+            if let Some(idx) = workspaces.iter().position(|ws| !ws.hidden()) {
+                active_workspace_idx = idx;
+            }
+        }
+
         Self {
             output_name: output.name(),
             output,
@@ -439,8 +445,38 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     fn is_rendered(&self, idx: usize) -> bool {
-        idx < self.workspaces.len()
-            && (!self.workspaces[idx].hidden() || idx == self.active_workspace_idx)
+        if idx >= self.workspaces.len() {
+            return false;
+        }
+        let ws = &self.workspaces[idx];
+        if ws.hidden() {
+            if idx == self.active_workspace_idx {
+                return true;
+            }
+            return self.workspace_switch.is_some() && self.previous_workspace_id == Some(ws.id());
+        }
+
+        // Hidden named workspaces sit between the ewaf empty and the trailing
+        // empty, which would otherwise show two empty strip slots on the host
+        // monitor while a sibling with no named workspaces collapses to one.
+        if self.should_collapse_empty_pair() {
+            let last = self.workspaces.len() - 1;
+            if idx != self.active_workspace_idx && (idx == 0 || idx == last) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn should_collapse_empty_pair(&self) -> bool {
+        self.options.layout.empty_workspace_above_first
+            && self.workspace_switch.is_none()
+            && !self.workspaces[self.active_workspace_idx].hidden()
+            && !self
+                .workspaces
+                .iter()
+                .any(|ws| !ws.hidden() && ws.has_windows())
+            && self.workspaces.len() > 1
     }
 
     fn rendered_count(&self) -> usize {
@@ -506,9 +542,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let prev_active_idx = self.active_workspace_idx;
-        let from_hidden = self.workspaces[prev_active_idx].hidden();
         self.active_workspace_idx = idx;
-        let to_hidden = self.workspaces[idx].hidden();
         let target = self.visual_index(idx) as f64;
 
         let config = config.unwrap_or(self.options.animations.workspace_switch.0);
@@ -530,13 +564,6 @@ impl<W: LayoutElement> Monitor<W> {
             _ => {
                 // Don't animate if nothing changed.
                 if prev_active_idx == idx {
-                    return;
-                }
-
-                // Hidden workspaces are off-strip; switching to/from them is instant so
-                // visual-index mapping stays consistent during the animation.
-                if from_hidden || to_hidden {
-                    self.workspace_switch = None;
                     return;
                 }
 
