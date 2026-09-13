@@ -2483,6 +2483,38 @@ fn hidden_named_workspace_restores_to_original_output() {
 }
 
 #[test]
+fn hidden_named_without_open_on_output_restores_to_first_output() {
+    let config = Config::parse_mem(
+        r#"
+        workspace "code" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::AddOutput(1),
+            Op::AddOutput(2),
+            Op::RemoveOutput(1),
+            Op::AddOutput(1),
+        ],
+    );
+    let (mon, _, ws) = layout
+        .workspaces()
+        .find(|(_, _, ws)| ws.name().map(String::as_str) == Some("code"))
+        .unwrap();
+    assert!(ws.hidden());
+    assert_eq!(
+        mon.unwrap().output_name(),
+        "output1",
+        "first attached output must remain home across unplug/replug"
+    );
+}
+
+#[test]
 fn hidden_named_workspace_is_offscreen_in_overview_geo() {
     let mut layout = check_ops([
         Op::AddOutput(1),

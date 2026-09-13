@@ -124,6 +124,10 @@ impl OutputId {
         let output_name = output.user_data().get::<OutputName>().unwrap();
         output_name.matches(&self.0)
     }
+
+    fn is_unset(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 static WORKSPACE_ID_COUNTER: IdCounter = IdCounter::new();
@@ -518,8 +522,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.output = output;
 
         if let Some(output) = &self.output {
-            // Normalize original output: possibly replace connector with make/model/serial.
-            if self.original_output.matches(output) {
+            // NoOutputs named workspaces start with an empty pin when config
+            // has no open-on-output. First attach becomes home so unplug/replug
+            // can restore.
+            if self.original_output.is_unset() || self.original_output.matches(output) {
                 self.original_output = OutputId::new(output);
             }
 
