@@ -2569,6 +2569,41 @@ fn switching_to_hidden_named_workspace_animates() {
 }
 
 #[test]
+fn switching_hidden_named_to_hidden_named_animates() {
+    let mut layout = check_ops([Op::AddOutput(1)]);
+    layout.ensure_named_workspace(&WorkspaceConfig {
+        name: WorkspaceName("a".into()),
+        open_on_output: None,
+        hidden: true,
+        layout: None,
+    });
+    layout.ensure_named_workspace(&WorkspaceConfig {
+        name: WorkspaceName("b".into()),
+        open_on_output: None,
+        hidden: true,
+        layout: None,
+    });
+    layout.verify_invariants();
+
+    let (idx_a, _) = layout.find_workspace_by_name("a").unwrap();
+    layout.switch_workspace(idx_a);
+    let (idx_b, _) = layout.find_workspace_by_name("b").unwrap();
+    layout.switch_workspace(idx_b);
+
+    let mon = layout.active_monitor_ref().unwrap();
+    match &mon.workspace_switch {
+        Some(super::monitor::WorkspaceSwitch::Animation(anim)) => {
+            assert_ne!(
+                anim.from(),
+                anim.to(),
+                "hidden→hidden must scroll between distinct strip slots"
+            );
+        }
+        other => panic!("expected workspace switch animation, got {other:?}"),
+    }
+}
+
+#[test]
 fn config_change_updates_cached_sizes() {
     let mut config = Config::default();
     let border = &mut config.layout.border;

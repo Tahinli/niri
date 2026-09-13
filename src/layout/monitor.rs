@@ -487,7 +487,13 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     fn visual_index(&self, vec_idx: usize) -> usize {
-        (0..vec_idx).filter(|&i| self.is_rendered(i)).count()
+        self.visual_index_or(vec_idx, &[])
+    }
+
+    fn visual_index_or(&self, vec_idx: usize, extra: &[usize]) -> usize {
+        (0..vec_idx)
+            .filter(|&i| extra.contains(&i) || self.is_rendered(i))
+            .count()
     }
 
     fn vec_from_visual(&self, visual: usize) -> usize {
@@ -535,7 +541,17 @@ impl<W: LayoutElement> Monitor<W> {
         config: Option<niri_config::Animation>,
     ) {
         // FIXME: also compute and use current velocity.
-        let current_idx = self.workspace_render_idx();
+        let from_idx = self.active_workspace_idx;
+        let extras = [from_idx, idx];
+        let both_hidden = self.workspaces[from_idx].hidden() && self.workspaces[idx].hidden();
+
+        // Hidden workspaces share one strip slot when idle. Switching hidden→hidden
+        // must count both endpoints so the animation has a distance.
+        let current_idx = if both_hidden {
+            self.visual_index_or(from_idx, &extras) as f64
+        } else {
+            self.workspace_render_idx()
+        };
 
         if self.active_workspace_idx != idx {
             self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
@@ -543,7 +559,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let prev_active_idx = self.active_workspace_idx;
         self.active_workspace_idx = idx;
-        let target = self.visual_index(idx) as f64;
+        let target = if both_hidden {
+            self.visual_index_or(idx, &extras) as f64
+        } else {
+            self.visual_index(idx) as f64
+        };
 
         let config = config.unwrap_or(self.options.animations.workspace_switch.0);
 
