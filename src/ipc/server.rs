@@ -615,9 +615,17 @@ impl State {
 
             // Check for any changes that we can't signal as individual events.
             let output_name = mon.map(|mon| mon.output_name());
-            if ipc_ws.idx != u8::try_from(ws_idx + 1).unwrap_or(u8::MAX)
+            let idx = mon.map(|m| m.strip_idx(ws_idx)).unwrap_or_else(|| {
+                if ws.hidden() {
+                    0
+                } else {
+                    u8::try_from(ws_idx + 1).unwrap_or(u8::MAX)
+                }
+            });
+            if ipc_ws.idx != idx
                 || ipc_ws.name.as_ref() != ws.name()
                 || ipc_ws.output.as_ref() != output_name
+                || ipc_ws.hidden != ws.hidden()
             {
                 need_workspaces_changed = true;
                 break;
@@ -663,15 +671,23 @@ impl State {
                 .workspaces()
                 .map(|(mon, ws_idx, ws)| {
                     let id = ws.id().get();
+                    let idx = mon.map(|m| m.strip_idx(ws_idx)).unwrap_or_else(|| {
+                        if ws.hidden() {
+                            0
+                        } else {
+                            u8::try_from(ws_idx + 1).unwrap_or(u8::MAX)
+                        }
+                    });
                     Workspace {
                         id,
-                        idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
+                        idx,
                         name: ws.name().cloned(),
                         output: mon.map(|mon| mon.output_name().clone()),
                         is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
+                        hidden: ws.hidden(),
                     }
                 })
                 .collect();

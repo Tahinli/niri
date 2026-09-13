@@ -1,6 +1,6 @@
 use std::cell::{Cell, OnceCell, RefCell};
 
-use niri_config::utils::{Flag, MergeWith as _};
+use niri_config::utils::Flag;
 use niri_config::workspace::WorkspaceName;
 use niri_config::{
     CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength, TabIndicatorPosition,
@@ -860,6 +860,7 @@ impl Op {
                 layout.ensure_named_workspace(&WorkspaceConfig {
                     name: WorkspaceName(format!("ws{ws_name}")),
                     open_on_output: output_name.map(|name| format!("output{name}")),
+                    hidden: false,
                     layout: layout_config.map(|x| niri_config::WorkspaceLayoutPart(*x)),
                 });
             }
@@ -2381,6 +2382,121 @@ fn removing_all_outputs_preserves_empty_named_workspaces() {
     };
 
     assert_eq!(workspaces.len(), 2);
+}
+
+#[test]
+fn hidden_named_workspace_skipped_by_focus_up_down() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+    ]);
+    layout.ensure_named_workspace(&WorkspaceConfig {
+        name: WorkspaceName("hidden".into()),
+        open_on_output: None,
+        hidden: true,
+        layout: None,
+    });
+    layout.verify_invariants();
+
+    let active_before = layout.active_workspace().unwrap().id();
+    assert!(layout.active_workspace().unwrap().name().is_none());
+
+    layout.switch_workspace_up();
+    layout.verify_invariants();
+    assert_eq!(
+        layout.active_workspace().unwrap().id(),
+        active_before,
+        "up must skip the hidden named workspace"
+    );
+
+    let (idx, _) = layout.find_workspace_by_name("hidden").unwrap();
+    layout.switch_workspace(idx);
+    layout.verify_invariants();
+    assert_eq!(
+        layout
+            .active_workspace()
+            .unwrap()
+            .name()
+            .map(String::as_str),
+        Some("hidden")
+    );
+
+    layout.switch_workspace_down();
+    layout.verify_invariants();
+    assert!(layout.active_workspace().unwrap().name().is_none());
+}
+
+#[test]
+fn hidden_named_workspace_does_not_consume_numeric_index() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+    ]);
+    layout.ensure_named_workspace(&WorkspaceConfig {
+        name: WorkspaceName("hidden".into()),
+        open_on_output: None,
+        hidden: true,
+        layout: None,
+    });
+    layout.verify_invariants();
+
+    let mon = layout.active_monitor_ref().unwrap();
+    let first = mon.nth_non_hidden(0).unwrap();
+    assert!(!mon.workspaces[first].hidden());
+    assert_ne!(
+        mon.workspaces[first].name().map(String::as_str),
+        Some("hidden")
+    );
+}
+
+#[test]
+fn hidden_named_workspace_restores_to_original_output() {
+    let mut layout = check_ops([Op::AddOutput(1)]);
+    layout.ensure_named_workspace(&WorkspaceConfig {
+        name: WorkspaceName("hidden".into()),
+        open_on_output: Some("output1".into()),
+        hidden: true,
+        layout: None,
+    });
+    check_ops_on_layout(
+        &mut layout,
+        [Op::AddOutput(2), Op::RemoveOutput(1), Op::AddOutput(1)],
+    );
+    let (mon, _, ws) = layout
+        .workspaces()
+        .find(|(_, _, ws)| ws.name().map(String::as_str) == Some("hidden"))
+        .unwrap();
+    assert!(ws.hidden());
+    assert_eq!(mon.unwrap().output_name(), "output1");
+}
+
+#[test]
+fn hidden_named_workspace_is_offscreen_in_overview_geo() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+    ]);
+    layout.ensure_named_workspace(&WorkspaceConfig {
+        name: WorkspaceName("hidden".into()),
+        open_on_output: None,
+        hidden: true,
+        layout: None,
+    });
+    layout.verify_invariants();
+
+    let mon = layout.active_monitor_ref().unwrap();
+    let hidden_idx = mon.workspaces.iter().position(|ws| ws.hidden()).unwrap();
+    let geos: Vec<_> = mon.workspaces_render_geo().collect();
+    assert!(
+        geos[hidden_idx].loc.y < -1000.,
+        "inactive hidden workspace must not occupy overview space"
+    );
 }
 
 #[test]

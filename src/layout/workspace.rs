@@ -106,6 +106,9 @@ pub struct Workspace<W: LayoutElement> {
     /// Optional name of this workspace.
     pub(super) name: Option<String>,
 
+    /// Off-strip named workspace: skipped by up/down and numeric index.
+    hidden: bool,
+
     /// Layout config overrides for this workspace.
     layout_config: Option<niri_config::LayoutPart>,
 
@@ -222,6 +225,7 @@ impl<W: LayoutElement> Workspace<W> {
             .map(OutputId)
             .unwrap_or(OutputId::new(&output));
 
+        let hidden = config.as_ref().is_some_and(|c| c.hidden);
         let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
 
         let scale = output.current_scale();
@@ -269,6 +273,7 @@ impl<W: LayoutElement> Workspace<W> {
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            hidden,
             layout_config,
             id: WorkspaceId::next(),
         }
@@ -286,6 +291,7 @@ impl<W: LayoutElement> Workspace<W> {
                 .unwrap_or_default(),
         );
 
+        let hidden = config.as_ref().is_some_and(|c| c.hidden);
         let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
 
         let scale = smithay::output::Scale::Integer(1);
@@ -333,6 +339,7 @@ impl<W: LayoutElement> Workspace<W> {
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            hidden,
             layout_config,
             id: WorkspaceId::next(),
         }
@@ -350,8 +357,17 @@ impl<W: LayoutElement> Workspace<W> {
         self.name.as_ref()
     }
 
+    pub fn hidden(&self) -> bool {
+        self.hidden
+    }
+
+    pub fn set_hidden(&mut self, hidden: bool) {
+        self.hidden = hidden;
+    }
+
     pub fn unname(&mut self) {
         self.name = None;
+        self.hidden = false;
     }
 
     pub fn has_windows_or_name(&self) -> bool {

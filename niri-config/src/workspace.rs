@@ -8,6 +8,13 @@ pub struct Workspace {
     pub name: WorkspaceName,
     #[knuffel(child, unwrap(argument))]
     pub open_on_output: Option<String>,
+    /// When set, the workspace stays off the monitor strip: skipped by
+    /// `focus-workspace-up/down` and numeric `focus-workspace N`, and omitted
+    /// from overview unless it is the active workspace. Reach it by name
+    /// (`focus-workspace "browser"`). Pin it with `open-on-output`; unplug
+    /// still migrates it and replug restores `original_output`.
+    #[knuffel(child)]
+    pub hidden: bool,
     #[knuffel(child)]
     pub layout: Option<WorkspaceLayoutPart>,
 }

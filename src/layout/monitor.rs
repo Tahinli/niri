@@ -403,6 +403,64 @@ impl<W: LayoutElement> Monitor<W> {
         self.windows().any(|win| win.id() == window)
     }
 
+    pub fn nth_non_hidden(&self, n: usize) -> Option<usize> {
+        self.workspaces
+            .iter()
+            .enumerate()
+            .filter(|(_, ws)| !ws.hidden())
+            .nth(n)
+            .map(|(idx, _)| idx)
+    }
+
+    pub fn strip_idx(&self, vec_idx: usize) -> u8 {
+        if self.workspaces.get(vec_idx).is_some_and(|ws| ws.hidden()) {
+            return 0;
+        }
+        let n = (0..vec_idx)
+            .filter(|&i| !self.workspaces[i].hidden())
+            .count();
+        u8::try_from(n + 1).unwrap_or(u8::MAX)
+    }
+
+    fn next_non_hidden(&self, from: usize, dir: isize) -> usize {
+        if dir == 0 {
+            return from;
+        }
+        let last = self.workspaces.len().saturating_sub(1) as isize;
+        let mut i = from as isize + dir;
+        while (0..=last).contains(&i) {
+            let idx = i as usize;
+            if !self.workspaces[idx].hidden() {
+                return idx;
+            }
+            i += dir;
+        }
+        from
+    }
+
+    fn is_rendered(&self, idx: usize) -> bool {
+        idx < self.workspaces.len()
+            && (!self.workspaces[idx].hidden() || idx == self.active_workspace_idx)
+    }
+
+    fn rendered_count(&self) -> usize {
+        (0..self.workspaces.len())
+            .filter(|&i| self.is_rendered(i))
+            .count()
+            .max(1)
+    }
+
+    fn visual_index(&self, vec_idx: usize) -> usize {
+        (0..vec_idx).filter(|&i| self.is_rendered(i)).count()
+    }
+
+    fn vec_from_visual(&self, visual: usize) -> usize {
+        (0..self.workspaces.len())
+            .filter(|&i| self.is_rendered(i))
+            .nth(visual)
+            .unwrap_or(self.active_workspace_idx)
+    }
+
     pub fn add_workspace_at(&mut self, idx: usize) {
         let ws = Workspace::new(
             self.output.clone(),
@@ -410,13 +468,14 @@ impl<W: LayoutElement> Monitor<W> {
             self.options.clone(),
         );
 
+        let insert_visual = self.visual_index(idx);
         self.workspaces.insert(idx, ws);
         if idx <= self.active_workspace_idx {
             self.active_workspace_idx += 1;
         }
 
         if let Some(switch) = &mut self.workspace_switch {
-            if idx as f64 <= switch.target_idx() {
+            if insert_visual as f64 <= switch.target_idx() {
                 switch.offset(1);
             }
         }
@@ -447,20 +506,23 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let prev_active_idx = self.active_workspace_idx;
+        let from_hidden = self.workspaces[prev_active_idx].hidden();
         self.active_workspace_idx = idx;
+        let to_hidden = self.workspaces[idx].hidden();
+        let target = self.visual_index(idx) as f64;
 
         let config = config.unwrap_or(self.options.animations.workspace_switch.0);
 
         match &mut self.workspace_switch {
             // During a DnD scroll, we want to visually animate even if idx matches the active idx.
             Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
-                gesture.center_idx = idx;
+                gesture.center_idx = target as usize;
 
                 // Adjust start_idx to make current_idx point at idx.
                 let current_pos = gesture.current_idx - gesture.start_idx;
-                gesture.start_idx = idx as f64 - current_pos;
+                gesture.start_idx = target - current_pos;
                 let prev_current_idx = gesture.current_idx;
-                gesture.current_idx = idx as f64;
+                gesture.current_idx = target;
 
                 let current_idx_delta = gesture.current_idx - prev_current_idx;
                 gesture.animate_from(-current_idx_delta, self.clock.clone(), config);
@@ -471,10 +533,17 @@ impl<W: LayoutElement> Monitor<W> {
                     return;
                 }
 
+                // Hidden workspaces are off-strip; switching to/from them is instant so
+                // visual-index mapping stays consistent during the animation.
+                if from_hidden || to_hidden {
+                    self.workspace_switch = None;
+                    return;
+                }
+
                 self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
                     self.clock.clone(),
                     current_idx,
-                    idx as f64,
+                    target,
                     0.,
                     config,
                 )));
@@ -785,7 +854,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn move_to_workspace_up(&mut self, focus: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let new_idx = source_workspace_idx.saturating_sub(1);
+        let new_idx = self.next_non_hidden(source_workspace_idx, -1);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -819,7 +888,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn move_to_workspace_down(&mut self, focus: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
+        let new_idx = self.next_non_hidden(source_workspace_idx, 1);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -910,7 +979,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn move_column_to_workspace_up(&mut self, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let new_idx = source_workspace_idx.saturating_sub(1);
+        let new_idx = self.next_non_hidden(source_workspace_idx, -1);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -931,7 +1000,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn move_column_to_workspace_down(&mut self, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
-        let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
+        let new_idx = self.next_non_hidden(source_workspace_idx, 1);
         if new_idx == source_workspace_idx {
             return;
         }
@@ -981,9 +1050,11 @@ impl<W: LayoutElement> Monitor<W> {
             Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
                 let current = gesture.current_idx;
                 let new = current.ceil() - 1.;
-                new.clamp(0., (self.workspaces.len() - 1) as f64) as usize
+                let visual =
+                    new.clamp(0., (self.rendered_count().saturating_sub(1)) as f64) as usize;
+                self.vec_from_visual(visual)
             }
-            _ => self.active_workspace_idx.saturating_sub(1),
+            _ => self.next_non_hidden(self.active_workspace_idx, -1),
         };
 
         self.activate_workspace(new_idx);
@@ -995,9 +1066,11 @@ impl<W: LayoutElement> Monitor<W> {
             Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
                 let current = gesture.current_idx;
                 let new = current.floor() + 1.;
-                new.clamp(0., (self.workspaces.len() - 1) as f64) as usize
+                let visual =
+                    new.clamp(0., (self.rendered_count().saturating_sub(1)) as f64) as usize;
+                self.vec_from_visual(visual)
             }
-            _ => min(self.active_workspace_idx + 1, self.workspaces.len() - 1),
+            _ => self.next_non_hidden(self.active_workspace_idx, 1),
         };
 
         self.activate_workspace(new_idx);
@@ -1240,7 +1313,10 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_workspace_down(&mut self) {
-        let mut new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
+        if self.workspaces[self.active_workspace_idx].hidden() {
+            return;
+        }
+        let mut new_idx = self.next_non_hidden(self.active_workspace_idx, 1);
         if new_idx == self.active_workspace_idx {
             return;
         }
@@ -1266,7 +1342,10 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_workspace_up(&mut self) {
-        let mut new_idx = self.active_workspace_idx.saturating_sub(1);
+        if self.workspaces[self.active_workspace_idx].hidden() {
+            return;
+        }
+        let mut new_idx = self.next_non_hidden(self.active_workspace_idx, -1);
         if new_idx == self.active_workspace_idx {
             return;
         }
@@ -1467,7 +1546,7 @@ impl<W: LayoutElement> Monitor<W> {
         if let Some(switch) = &self.workspace_switch {
             switch.current_idx()
         } else {
-            self.active_workspace_idx as f64
+            self.visual_index(self.active_workspace_idx) as f64
         }
     }
 
@@ -1487,9 +1566,27 @@ impl<W: LayoutElement> Monitor<W> {
         let first_ws_y = -self.workspace_render_idx() * ws_height_with_gap;
         let first_ws_y = round_logical_in_physical(scale, first_ws_y);
 
+        let mut visual_of = vec![None; self.workspaces.len()];
+        let mut rendered_count = 0usize;
+        for (i, slot) in visual_of.iter_mut().enumerate() {
+            if self.is_rendered(i) {
+                *slot = Some(rendered_count);
+                rendered_count += 1;
+            }
+        }
+
         // Return position for one-past-last workspace too.
         (0..=self.workspaces.len()).map(move |idx| {
-            let y = first_ws_y + idx as f64 * ws_height_with_gap;
+            let visual = if idx == visual_of.len() {
+                Some(rendered_count)
+            } else {
+                visual_of[idx]
+            };
+
+            let y = match visual {
+                Some(v) => first_ws_y + v as f64 * ws_height_with_gap,
+                None => -1_000_000.,
+            };
             let loc = Point::from((0., y)) + static_offset;
 
             // Even though all components that go into loc are rounded to physical pixels, the
@@ -1780,7 +1877,7 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {
-        let center_idx = self.active_workspace_idx;
+        let center_idx = self.visual_index(self.active_workspace_idx);
         let current_idx = self.workspace_render_idx();
 
         let gesture = WorkspaceSwitchGesture {
@@ -1812,7 +1909,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         }
 
-        let center_idx = self.active_workspace_idx;
+        let center_idx = self.visual_index(self.active_workspace_idx);
         let current_idx = self.workspace_render_idx();
 
         let gesture = WorkspaceSwitchGesture {
@@ -1844,6 +1941,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let zoom = self.overview_zoom();
+        let rendered_count = self.rendered_count();
         let total_height = if gesture.is_touchpad {
             WORKSPACE_GESTURE_MOVEMENT
         } else {
@@ -1869,7 +1967,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let pos = gesture.tracker.pos() / total_height;
 
-        let (min, max) = gesture.min_max(self.workspaces.len());
+        let (min, max) = gesture.min_max(rendered_count);
         let new_idx = gesture.start_idx + pos;
         let new_idx = rubber_band.clamp(min, max, new_idx);
 
@@ -1883,6 +1981,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) -> bool {
         let zoom = self.overview_zoom();
+        let rendered_count = self.rendered_count();
 
         let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
             return false;
@@ -1956,7 +2055,7 @@ impl<W: LayoutElement> Monitor<W> {
         let pos = gesture.tracker.pos() / total_height;
         let unclamped = gesture.start_idx + pos;
 
-        let (min, max) = gesture.min_max(self.workspaces.len());
+        let (min, max) = gesture.min_max(rendered_count);
         let clamped = unclamped.clamp(min, max);
 
         // Make sure that DnD scrolling too much outside the min/max does not "build up".
@@ -1976,6 +2075,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let zoom = self.overview_zoom();
+        let rendered_count = self.rendered_count();
         let total_height = if gesture.dnd_last_event_time.is_some() {
             WORKSPACE_DND_EDGE_SCROLL_MOVEMENT
         } else if gesture.is_touchpad {
@@ -1984,38 +2084,42 @@ impl<W: LayoutElement> Monitor<W> {
             self.workspace_size_with_gap(1.).h
         };
 
-        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
-            return false;
+        let (visual, current_idx, velocity) = {
+            let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+                return false;
+            };
+
+            // Take into account any idle time between the last event and now.
+            let now = self.clock.now_unadjusted();
+            gesture.tracker.push(0., now);
+
+            let mut rubber_band = WORKSPACE_GESTURE_RUBBER_BAND;
+            rubber_band.limit /= zoom;
+
+            let mut velocity = gesture.tracker.velocity() / total_height;
+            let current_pos = gesture.tracker.pos() / total_height;
+            let pos = gesture.tracker.projected_end_pos() / total_height;
+
+            let (min, max) = gesture.min_max(rendered_count);
+            let new_idx = gesture.start_idx + pos;
+
+            let new_idx = new_idx.clamp(min, max);
+            let visual = new_idx.round() as usize;
+
+            velocity *= rubber_band.clamp_derivative(min, max, gesture.start_idx + current_pos);
+            (visual, gesture.current_idx, velocity)
         };
 
-        // Take into account any idle time between the last event and now.
-        let now = self.clock.now_unadjusted();
-        gesture.tracker.push(0., now);
-
-        let mut rubber_band = WORKSPACE_GESTURE_RUBBER_BAND;
-        rubber_band.limit /= zoom;
-
-        let mut velocity = gesture.tracker.velocity() / total_height;
-        let current_pos = gesture.tracker.pos() / total_height;
-        let pos = gesture.tracker.projected_end_pos() / total_height;
-
-        let (min, max) = gesture.min_max(self.workspaces.len());
-        let new_idx = gesture.start_idx + pos;
-
-        let new_idx = new_idx.clamp(min, max);
-        let new_idx = new_idx.round() as usize;
-
-        velocity *= rubber_band.clamp_derivative(min, max, gesture.start_idx + current_pos);
-
-        if self.active_workspace_idx != new_idx {
+        let vec_idx = self.vec_from_visual(visual);
+        if self.active_workspace_idx != vec_idx {
             self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
         }
 
-        self.active_workspace_idx = new_idx;
+        self.active_workspace_idx = vec_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             self.clock.clone(),
-            gesture.current_idx,
-            new_idx as f64,
+            current_idx,
+            visual as f64,
             velocity,
             self.options.animations.workspace_switch.0,
         )));

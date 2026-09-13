@@ -1475,6 +1475,13 @@ pub struct Workspace {
     pub is_focused: bool,
     /// Id of the active window on this workspace, if any.
     pub active_window_id: Option<u64>,
+    /// Whether this named workspace is hidden from the monitor strip.
+    ///
+    /// Hidden workspaces are skipped by `focus-workspace-up/down` and numeric
+    /// `focus-workspace N`. Their `idx` is `0` and does not correspond to a
+    /// numeric focus index. Address them by [`Self::name`] or [`Self::id`].
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 /// Configured keyboard layouts.

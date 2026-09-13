@@ -46,6 +46,18 @@ Before, it could only use the connector name.
 This means that named workspaces "stick" to their original output in more cases, reflecting their more permanent nature.
 Explicitly moving a named workspace to a different monitor will still update its original output.
 
+<sup>Fork</sup> `hidden` keeps a named workspace off the monitor strip. It is skipped by `focus-workspace-up` / `focus-workspace-down` and by numeric `focus-workspace N`, and it does not take a slot in the overview unless it is the active workspace. Reach it with `focus-workspace "name"` (or `move-column-to-workspace "name"`). Pin it with `open-on-output`; disconnect still migrates it to the remaining monitor, and reconnect moves it back to its original output.
+
+```kdl
+workspace "code" {
+    hidden
+    open-on-output "DP-1"
+}
+```
+
+Default is off: named workspaces without `hidden` keep occupying strip slots as before.
+
+
 ### Layout config overrides
 
 <sup>Since: 25.11</sup>

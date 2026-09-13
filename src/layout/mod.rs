@@ -1311,7 +1311,8 @@ impl<W: LayoutElement> Layout<W> {
         if let WorkspaceReference::Index(index) = reference {
             self.active_monitor().and_then(|m| {
                 let index = index.saturating_sub(1) as usize;
-                m.workspaces.get_mut(index)
+                let vec_idx = m.nth_non_hidden(index)?;
+                m.workspaces.get_mut(vec_idx)
             })
         } else {
             self.workspaces_mut().find(|ws| match &reference {
@@ -2951,6 +2952,7 @@ impl<W: LayoutElement> Layout<W> {
             let Some(name) = ws.name() else { continue };
             if let Some(config) = config.workspaces.iter().find(|w| &w.name.0 == name) {
                 ws.update_layout_config(config.layout.clone().map(|x| x.0));
+                ws.set_hidden(config.hidden);
             }
         }
 

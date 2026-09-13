@@ -3596,7 +3596,13 @@ impl Niri {
     ) -> Option<(Option<Output>, usize)> {
         let (target_workspace_index, target_workspace) = match workspace_reference {
             WorkspaceReference::Index(index) => {
-                return Some((None, index.saturating_sub(1) as usize));
+                let n = index.saturating_sub(1) as usize;
+                let vec_idx = self
+                    .layout
+                    .active_monitor_ref()
+                    .and_then(|m| m.nth_non_hidden(n))
+                    .unwrap_or(n);
+                return Some((None, vec_idx));
             }
             WorkspaceReference::Name(name) => self.layout.find_workspace_by_name(&name)?,
             WorkspaceReference::Id(id) => {

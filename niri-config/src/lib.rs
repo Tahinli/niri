@@ -648,6 +648,22 @@ mod tests {
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
+    #[test]
+    fn parse_hidden_workspace() {
+        let config = do_parse(
+            r#"
+            workspace "code" {
+                hidden
+                open-on-output "DP-1"
+            }
+            "#,
+        );
+        assert_eq!(config.workspaces.len(), 1);
+        assert!(config.workspaces[0].hidden);
+        assert_eq!(config.workspaces[0].open_on_output.as_deref(), Some("DP-1"));
+        assert!(!do_parse(r#"workspace "code""#).workspaces[0].hidden);
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse_mem(text)
@@ -2282,6 +2298,7 @@ mod tests {
                     open_on_output: Some(
                         "eDP-1",
                     ),
+                    hidden: false,
                     layout: None,
                 },
                 Workspace {
@@ -2289,6 +2306,7 @@ mod tests {
                         "workspace-2",
                     ),
                     open_on_output: None,
+                    hidden: false,
                     layout: None,
                 },
                 Workspace {
@@ -2296,6 +2314,7 @@ mod tests {
                         "workspace-3",
                     ),
                     open_on_output: None,
+                    hidden: false,
                     layout: None,
                 },
             ],
