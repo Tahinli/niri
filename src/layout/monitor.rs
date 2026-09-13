@@ -495,6 +495,25 @@ impl<W: LayoutElement> Monitor<W> {
             .count()
     }
 
+    /// Visual index as it will be once `workspace_switch` is set: collapse off,
+    /// active + previous hidden workspaces on the strip.
+    fn visual_index_during_switch(&self, vec_idx: usize) -> usize {
+        (0..vec_idx)
+            .filter(|&i| self.is_rendered_during_switch(i))
+            .count()
+    }
+
+    fn is_rendered_during_switch(&self, idx: usize) -> bool {
+        if idx >= self.workspaces.len() {
+            return false;
+        }
+        let ws = &self.workspaces[idx];
+        if ws.hidden() {
+            return idx == self.active_workspace_idx || self.previous_workspace_id == Some(ws.id());
+        }
+        true
+    }
+
     fn vec_from_visual(&self, visual: usize) -> usize {
         (0..self.workspaces.len())
             .filter(|&i| self.is_rendered(i))
@@ -541,17 +560,8 @@ impl<W: LayoutElement> Monitor<W> {
     ) {
         // FIXME: also compute and use current velocity.
         let from_idx = self.active_workspace_idx;
-        let extras = [from_idx, idx];
         let involve_hidden = self.workspaces[from_idx].hidden() || self.workspaces[idx].hidden();
-
-        // Hidden workspaces share one strip slot when idle. Any switch that
-        // involves one must count both endpoints so the animation has distance
-        // and the target is in the render list from frame one.
-        let current_idx = if involve_hidden {
-            self.visual_index_or(from_idx, &extras) as f64
-        } else {
-            self.workspace_render_idx()
-        };
+        let camera_now = self.workspace_render_idx();
 
         if self.active_workspace_idx != idx {
             self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
@@ -559,8 +569,18 @@ impl<W: LayoutElement> Monitor<W> {
 
         let prev_active_idx = self.active_workspace_idx;
         self.active_workspace_idx = idx;
+
+        // Hidden workspaces share one strip slot when idle. From/to must use
+        // the in-flight list (collapse off, both endpoints visible). The idle
+        // list makes `to` land on the old workspace; the camera sits there
+        // until the spring ends, then snaps — the ~100ms linger.
+        let current_idx = if involve_hidden {
+            self.visual_index_during_switch(from_idx) as f64
+        } else {
+            camera_now
+        };
         let target = if involve_hidden {
-            self.visual_index_or(idx, &extras) as f64
+            self.visual_index_during_switch(idx) as f64
         } else {
             self.visual_index(idx) as f64
         };

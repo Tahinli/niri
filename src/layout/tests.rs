@@ -2673,6 +2673,68 @@ fn switching_hidden_named_to_hidden_named_animates() {
 }
 
 #[test]
+fn hidden_to_hidden_with_ewaf_scrolls_onto_destination() {
+    let config = Config::parse_mem(
+        r#"
+        layout {
+            empty-workspace-above-first
+        }
+        workspace "a" {
+            hidden
+        }
+        workspace "b" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(&mut layout, [Op::AddOutput(1)]);
+
+    let (idx_a, _) = layout.find_workspace_by_name("a").unwrap();
+    layout.switch_workspace(idx_a);
+    if let Some(mon) = layout.active_monitor() {
+        mon.workspace_switch = None;
+    }
+
+    let (idx_b, _) = layout.find_workspace_by_name("b").unwrap();
+    layout.switch_workspace(idx_b);
+
+    let mon = layout.active_monitor_ref().unwrap();
+    let Some(super::monitor::WorkspaceSwitch::Animation(anim)) = &mon.workspace_switch else {
+        panic!("expected workspace switch animation");
+    };
+    assert_ne!(anim.from(), anim.to());
+
+    let geos: Vec<_> = mon.workspaces_render_geo().collect();
+    let idx_a = mon
+        .workspaces
+        .iter()
+        .position(|ws| ws.name().map(String::as_str) == Some("a"))
+        .unwrap();
+    let idx_b = mon
+        .workspaces
+        .iter()
+        .position(|ws| ws.name().map(String::as_str) == Some("b"))
+        .unwrap();
+
+    assert!(
+        geos[idx_a].loc.y.abs() < 1.0,
+        "camera must start on the old hidden workspace, y={}",
+        geos[idx_a].loc.y
+    );
+    assert!(
+        geos[idx_b].loc.y.abs() > 1.0,
+        "incoming hidden workspace must start offscreen so it slides in, y={}",
+        geos[idx_b].loc.y
+    );
+    assert!(
+        geos[idx_b].loc.y > -999_000.0,
+        "incoming hidden workspace must be on the strip, not parked"
+    );
+}
+
+#[test]
 fn config_change_updates_cached_sizes() {
     let mut config = Config::default();
     let border = &mut config.layout.border;
