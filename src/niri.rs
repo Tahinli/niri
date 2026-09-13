@@ -5080,6 +5080,19 @@ impl Niri {
             );
         }
 
+        // Hidden workspaces are culled from the scanout tree, so they never pass the
+        // primary-scanout check above. Keep them producing buffers or switching in
+        // shows a blank workspace until the client paints (~300ms).
+        self.layout
+            .with_windows_on_hidden_inactive_mut(output, |mapped| {
+                mapped.send_frame(
+                    output,
+                    frame_callback_time,
+                    Some(Duration::from_millis(150)),
+                    |_, _| Some(output.clone()),
+                );
+            });
+
         for surface in layer_map_for_output(output).layers() {
             surface.send_frame(
                 output,

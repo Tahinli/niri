@@ -2619,10 +2619,16 @@ fn switching_to_hidden_named_workspace_animates() {
     layout.switch_workspace(idx);
 
     let mon = layout.active_monitor_ref().unwrap();
-    assert!(
-        mon.workspace_switch.is_some(),
-        "focusing a hidden named workspace must animate like any other switch"
-    );
+    match &mon.workspace_switch {
+        Some(super::monitor::WorkspaceSwitch::Animation(anim)) => {
+            assert_ne!(
+                anim.from(),
+                anim.to(),
+                "unnamed→hidden must scroll, not snap onto the same strip slot"
+            );
+        }
+        other => panic!("expected workspace switch animation, got {other:?}"),
+    }
     assert_eq!(
         mon.workspaces[mon.active_workspace_idx]
             .name()

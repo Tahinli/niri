@@ -542,11 +542,12 @@ impl<W: LayoutElement> Monitor<W> {
         // FIXME: also compute and use current velocity.
         let from_idx = self.active_workspace_idx;
         let extras = [from_idx, idx];
-        let both_hidden = self.workspaces[from_idx].hidden() && self.workspaces[idx].hidden();
+        let involve_hidden = self.workspaces[from_idx].hidden() || self.workspaces[idx].hidden();
 
-        // Hidden workspaces share one strip slot when idle. Switching hidden→hidden
-        // must count both endpoints so the animation has a distance.
-        let current_idx = if both_hidden {
+        // Hidden workspaces share one strip slot when idle. Any switch that
+        // involves one must count both endpoints so the animation has distance
+        // and the target is in the render list from frame one.
+        let current_idx = if involve_hidden {
             self.visual_index_or(from_idx, &extras) as f64
         } else {
             self.workspace_render_idx()
@@ -558,7 +559,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let prev_active_idx = self.active_workspace_idx;
         self.active_workspace_idx = idx;
-        let target = if both_hidden {
+        let target = if involve_hidden {
             self.visual_index_or(idx, &extras) as f64
         } else {
             self.visual_index(idx) as f64
@@ -1221,6 +1222,13 @@ impl<W: LayoutElement> Monitor<W> {
             if Some(ws.id()) == insert_hint_ws_id {
                 insert_hint_ws_geo = Some(geo);
             }
+        }
+
+        let hidden_idle: Vec<usize> = (0..self.workspaces.len())
+            .filter(|&i| self.workspaces[i].hidden() && !self.is_rendered(i))
+            .collect();
+        for i in hidden_idle {
+            self.workspaces[i].update_render_elements(false);
         }
 
         self.insert_hint_render_loc = None;

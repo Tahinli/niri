@@ -1666,6 +1666,27 @@ impl<W: LayoutElement> Layout<W> {
         moving_window.chain(mon_windows)
     }
 
+    pub fn with_windows_on_hidden_inactive_mut(
+        &mut self,
+        output: &Output,
+        mut f: impl FnMut(&mut W),
+    ) {
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            return;
+        };
+        let Some(mon) = monitors.iter_mut().find(|mon| &mon.output == output) else {
+            return;
+        };
+        let active = mon.active_workspace_idx;
+        for (idx, ws) in mon.workspaces.iter_mut().enumerate() {
+            if ws.hidden() && idx != active {
+                for win in ws.windows_mut() {
+                    f(win);
+                }
+            }
+        }
+    }
+
     pub fn with_windows(
         &self,
         mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout),
