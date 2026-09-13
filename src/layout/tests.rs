@@ -2445,11 +2445,19 @@ fn hidden_named_workspace_does_not_consume_numeric_index() {
     layout.verify_invariants();
 
     let mon = layout.active_monitor_ref().unwrap();
-    let first = mon.nth_non_hidden(0).unwrap();
-    assert!(!mon.workspaces[first].hidden());
-    assert_ne!(
-        mon.workspaces[first].name().map(String::as_str),
-        Some("hidden")
+    let strip: Vec<usize> = (0..mon.workspaces.len())
+        .filter_map(|n| mon.nth_non_hidden(n))
+        .collect();
+    assert!(!strip.is_empty());
+    assert!(
+        strip.iter().all(|&i| !mon.workspaces[i].hidden()),
+        "numeric strip indices must skip hidden named workspaces"
+    );
+    let past_end = strip.len();
+    assert_eq!(
+        mon.nth_non_hidden(past_end),
+        None,
+        "out-of-range Mod+N must not fall back onto a hidden workspace"
     );
 }
 

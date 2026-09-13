@@ -3600,8 +3600,7 @@ impl Niri {
                 let vec_idx = self
                     .layout
                     .active_monitor_ref()
-                    .and_then(|m| m.nth_non_hidden(n))
-                    .unwrap_or(n);
+                    .and_then(|m| m.nth_non_hidden(n))?;
                 return Some((None, vec_idx));
             }
             WorkspaceReference::Name(name) => self.layout.find_workspace_by_name(&name)?,
