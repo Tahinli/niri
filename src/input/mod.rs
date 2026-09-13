@@ -1533,17 +1533,42 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWorkspaceToIndex(new_idx) => {
-                let new_idx = new_idx.saturating_sub(1);
-                self.niri.layout.move_workspace_to_idx(None, new_idx);
-                // FIXME: granular
-                self.niri.queue_redraw_all();
-            }
-            Action::MoveWorkspaceToIndexByRef { new_idx, reference } => {
-                if let Some(res) = self.niri.find_output_and_workspace_index(reference) {
-                    let new_idx = new_idx.saturating_sub(1);
-                    self.niri.layout.move_workspace_to_idx(Some(res), new_idx);
+                let n = new_idx.saturating_sub(1) as usize;
+                if let Some(vec_idx) = self
+                    .niri
+                    .layout
+                    .active_monitor_ref()
+                    .and_then(|m| m.nth_non_hidden(n))
+                {
+                    self.niri.layout.move_workspace_to_idx(None, vec_idx);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
+                }
+            }
+            Action::MoveWorkspaceToIndexByRef { new_idx, reference } => {
+                if let Some((output, old_idx)) =
+                    self.niri.find_output_and_workspace_index(reference)
+                {
+                    let n = new_idx.saturating_sub(1) as usize;
+                    let vec_idx = match output.as_ref() {
+                        Some(o) => self
+                            .niri
+                            .layout
+                            .monitor_for_output(o)
+                            .and_then(|m| m.nth_non_hidden(n)),
+                        None => self
+                            .niri
+                            .layout
+                            .active_monitor_ref()
+                            .and_then(|m| m.nth_non_hidden(n)),
+                    };
+                    if let Some(vec_idx) = vec_idx {
+                        self.niri
+                            .layout
+                            .move_workspace_to_idx(Some((output, old_idx)), vec_idx);
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
                 }
             }
             Action::SetWorkspaceName(name) => {

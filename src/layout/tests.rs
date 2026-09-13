@@ -2542,6 +2542,37 @@ fn hidden_named_do_not_give_host_monitor_extra_empty() {
 }
 
 #[test]
+fn hidden_named_active_does_not_inflate_overview() {
+    let config = Config::parse_mem(
+        r#"
+        layout {
+            empty-workspace-above-first
+        }
+        workspace "code" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(&mut layout, [Op::AddOutput(1)]);
+
+    let (idx, _) = layout.find_workspace_by_name("code").unwrap();
+    layout.switch_workspace(idx);
+    // Finish the switch so collapse can run.
+    if let Some(mon) = layout.active_monitor() {
+        mon.workspace_switch = None;
+    }
+
+    let mon = layout.active_monitor_ref().unwrap();
+    assert_eq!(
+        visible_strip_slots(mon),
+        1,
+        "overview must stay one slot while sitting on a hidden named workspace with no windows"
+    );
+}
+
+#[test]
 fn switching_to_hidden_named_workspace_animates() {
     let mut layout = check_ops([Op::AddOutput(1)]);
     layout.ensure_named_workspace(&WorkspaceConfig {

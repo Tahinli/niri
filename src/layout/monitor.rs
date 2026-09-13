@@ -471,7 +471,6 @@ impl<W: LayoutElement> Monitor<W> {
     fn should_collapse_empty_pair(&self) -> bool {
         self.options.layout.empty_workspace_above_first
             && self.workspace_switch.is_none()
-            && !self.workspaces[self.active_workspace_idx].hidden()
             && !self
                 .workspaces
                 .iter()
