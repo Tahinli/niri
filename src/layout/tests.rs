@@ -2637,6 +2637,54 @@ fn collapsed_empty_pair_is_one_numeric_slot() {
 }
 
 #[test]
+fn can_leave_hidden_named_to_unnamed_with_ewaf() {
+    let config = Config::parse_mem(
+        r#"
+        layout {
+            empty-workspace-above-first
+        }
+        workspace "code" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(&mut layout, [Op::AddOutput(1)]);
+
+    let (idx, _) = layout.find_workspace_by_name("code").unwrap();
+    layout.switch_workspace(idx);
+    if let Some(mon) = layout.active_monitor() {
+        mon.workspace_switch = None;
+    }
+    assert_eq!(
+        layout
+            .active_workspace()
+            .unwrap()
+            .name()
+            .map(String::as_str),
+        Some("code")
+    );
+
+    let mon = layout.active_monitor_ref().unwrap();
+    let slot = mon
+        .nth_non_hidden(0)
+        .expect("Mod+1 must still hit the unnamed empty while sitting on a hidden workspace");
+    assert!(
+        !mon.workspaces[slot].hidden(),
+        "Mod+1 must land on an unnamed workspace"
+    );
+    assert_eq!(mon.nth_non_hidden(1), None);
+
+    layout.switch_workspace_down();
+    layout.verify_invariants();
+    assert!(
+        layout.active_workspace().unwrap().name().is_none(),
+        "focus-workspace-down from hidden must reach the unnamed empty"
+    );
+}
+
+#[test]
 fn overview_switch_to_hidden_does_not_inflate_strip() {
     let config = Config::parse_mem(
         r#"

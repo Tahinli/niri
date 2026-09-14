@@ -436,6 +436,13 @@ impl<W: LayoutElement> Monitor<W> {
             }
             i += dir;
         }
+        // Hidden workspaces are off the strip. Walking off either end must
+        // still land on the one unnamed slot, or you cannot leave.
+        if self.workspaces.get(from).is_some_and(|ws| ws.hidden()) {
+            return (0..self.workspaces.len())
+                .find(|&i| self.occupies_strip(i))
+                .unwrap_or(from);
+        }
         from
     }
 
@@ -450,11 +457,25 @@ impl<W: LayoutElement> Monitor<W> {
         }
         if self.would_collapse_empty_pair() {
             let last = self.workspaces.len() - 1;
-            if idx != self.active_workspace_idx && (idx == 0 || idx == last) {
+            let keeper = self.collapsed_empty_keeper();
+            if (idx == 0 || idx == last) && idx != keeper {
                 return false;
             }
         }
         true
+    }
+
+    /// The one empty that remains when the ewaf pair is collapsed.
+    /// If the active workspace is hidden, keep the first empty so Mod+1 /
+    /// focus-workspace-up/down can leave.
+    fn collapsed_empty_keeper(&self) -> usize {
+        let last = self.workspaces.len() - 1;
+        let active = self.active_workspace_idx;
+        if !self.workspaces[active].hidden() && (active == 0 || active == last) {
+            active
+        } else {
+            0
+        }
     }
 
     fn is_rendered(&self, idx: usize) -> bool {
