@@ -410,21 +410,16 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn nth_non_hidden(&self, n: usize) -> Option<usize> {
-        self.workspaces
-            .iter()
-            .enumerate()
-            .filter(|(_, ws)| !ws.hidden())
+        (0..self.workspaces.len())
+            .filter(|&i| self.occupies_strip(i))
             .nth(n)
-            .map(|(idx, _)| idx)
     }
 
     pub fn strip_idx(&self, vec_idx: usize) -> u8 {
-        if self.workspaces.get(vec_idx).is_some_and(|ws| ws.hidden()) {
+        if !self.occupies_strip(vec_idx) {
             return 0;
         }
-        let n = (0..vec_idx)
-            .filter(|&i| !self.workspaces[i].hidden())
-            .count();
+        let n = (0..vec_idx).filter(|&i| self.occupies_strip(i)).count();
         u8::try_from(n + 1).unwrap_or(u8::MAX)
     }
 
@@ -436,12 +431,30 @@ impl<W: LayoutElement> Monitor<W> {
         let mut i = from as isize + dir;
         while (0..=last).contains(&i) {
             let idx = i as usize;
-            if !self.workspaces[idx].hidden() {
+            if self.occupies_strip(idx) {
                 return idx;
             }
             i += dir;
         }
         from
+    }
+
+    /// Non-hidden workspaces that occupy a strip/overview slot.
+    /// Collapsed ewaf empties are omitted so Mod+N matches what overview shows.
+    fn occupies_strip(&self, idx: usize) -> bool {
+        if idx >= self.workspaces.len() {
+            return false;
+        }
+        if self.workspaces[idx].hidden() {
+            return false;
+        }
+        if self.would_collapse_empty_pair() {
+            let last = self.workspaces.len() - 1;
+            if idx != self.active_workspace_idx && (idx == 0 || idx == last) {
+                return false;
+            }
+        }
+        true
     }
 
     fn is_rendered(&self, idx: usize) -> bool {
@@ -452,6 +465,10 @@ impl<W: LayoutElement> Monitor<W> {
         if ws.hidden() {
             if idx == self.active_workspace_idx {
                 return true;
+            }
+            // Overview must not grow extra slots for the workspace we left.
+            if self.overview_progress.is_some() {
+                return false;
             }
             return self.workspace_switch.is_some() && self.previous_workspace_id == Some(ws.id());
         }
@@ -468,14 +485,20 @@ impl<W: LayoutElement> Monitor<W> {
         true
     }
 
-    fn should_collapse_empty_pair(&self) -> bool {
+    fn would_collapse_empty_pair(&self) -> bool {
         self.options.layout.empty_workspace_above_first
-            && self.workspace_switch.is_none()
             && !self
                 .workspaces
                 .iter()
                 .any(|ws| !ws.hidden() && ws.has_windows())
             && self.workspaces.len() > 1
+    }
+
+    fn should_collapse_empty_pair(&self) -> bool {
+        // Keep collapse during overview switches so hidden workspaces and the
+        // extra empty do not flash in as extra slots for a frame.
+        self.would_collapse_empty_pair()
+            && (self.workspace_switch.is_none() || self.overview_progress.is_some())
     }
 
     fn rendered_count(&self) -> usize {
@@ -574,12 +597,17 @@ impl<W: LayoutElement> Monitor<W> {
         // the in-flight list (collapse off, both endpoints visible). The idle
         // list makes `to` land on the old workspace; the camera sits there
         // until the spring ends, then snaps — the ~100ms linger.
-        let current_idx = if involve_hidden {
+        // Overview keeps collapse, so stay on the idle list or hidden
+        // workspaces flash in as extra slots.
+        let in_overview = self.overview_progress.is_some();
+        let current_idx = if involve_hidden && !in_overview {
             self.visual_index_during_switch(from_idx) as f64
+        } else if involve_hidden {
+            self.visual_index(from_idx) as f64
         } else {
             camera_now
         };
-        let target = if involve_hidden {
+        let target = if involve_hidden && !in_overview {
             self.visual_index_during_switch(idx) as f64
         } else {
             self.visual_index(idx) as f64

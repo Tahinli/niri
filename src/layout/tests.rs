@@ -2605,6 +2605,81 @@ fn hidden_named_active_does_not_inflate_overview() {
 }
 
 #[test]
+fn collapsed_empty_pair_is_one_numeric_slot() {
+    let config = Config::parse_mem(
+        r#"
+        layout {
+            empty-workspace-above-first
+        }
+        workspace "code" {
+            hidden
+        }
+        workspace "github" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(&mut layout, [Op::AddOutput(1)]);
+
+    let mon = layout.active_monitor_ref().unwrap();
+    assert_eq!(visible_strip_slots(mon), 1);
+    assert!(
+        mon.nth_non_hidden(0).is_some(),
+        "Mod+1 must hit the one visible slot"
+    );
+    assert_eq!(
+        mon.nth_non_hidden(1),
+        None,
+        "Mod+2 must not hit the collapsed extra empty"
+    );
+}
+
+#[test]
+fn overview_switch_to_hidden_does_not_inflate_strip() {
+    let config = Config::parse_mem(
+        r#"
+        layout {
+            empty-workspace-above-first
+        }
+        workspace "code" {
+            hidden
+        }
+        workspace "github" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(&mut layout, [Op::AddOutput(1)]);
+
+    layout.toggle_overview();
+    let (idx, _) = layout.find_workspace_by_name("code").unwrap();
+    layout.switch_workspace(idx);
+
+    let mon = layout.active_monitor_ref().unwrap();
+    assert!(mon.workspace_switch.is_some());
+    assert_eq!(
+        visible_strip_slots(mon),
+        1,
+        "overview must stay one slot while switching to a hidden workspace"
+    );
+
+    let geos: Vec<_> = mon.workspaces_render_geo().collect();
+    for (i, ws) in mon.workspaces.iter().enumerate() {
+        if ws.hidden() && i != mon.active_workspace_idx {
+            assert!(
+                geos[i].loc.y < -1000.,
+                "inactive hidden workspace {:?} must stay parked during overview switch",
+                ws.name()
+            );
+        }
+    }
+}
+
+#[test]
 fn switching_to_hidden_named_workspace_animates() {
     let mut layout = check_ops([Op::AddOutput(1)]);
     layout.ensure_named_workspace(&WorkspaceConfig {
