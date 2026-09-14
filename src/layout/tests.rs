@@ -2685,6 +2685,59 @@ fn can_leave_hidden_named_to_unnamed_with_ewaf() {
 }
 
 #[test]
+fn moving_hidden_workspace_to_other_output_leaves_unnamed() {
+    let config = Config::parse_mem(
+        r#"
+        layout {
+            empty-workspace-above-first
+        }
+        workspace "code" {
+            hidden
+        }
+        workspace "github" {
+            hidden
+        }
+        "#,
+    )
+    .unwrap();
+    let mut layout = Layout::new(Clock::with_time(Duration::ZERO), &config);
+    check_ops_on_layout(&mut layout, [Op::AddOutput(1), Op::AddOutput(2)]);
+
+    let (idx, _) = layout.find_workspace_by_name("github").unwrap();
+    layout.switch_workspace(idx);
+    if let Some(mon) = layout.active_monitor() {
+        mon.workspace_switch = None;
+    }
+
+    check_ops_on_layout(&mut layout, [Op::MoveWorkspaceToOutput(2)]);
+    layout.verify_invariants();
+
+    let MonitorSet::Normal { monitors, .. } = &layout.monitor_set else {
+        unreachable!()
+    };
+    let source = monitors
+        .iter()
+        .find(|mon| mon.output_name() == "output1")
+        .unwrap();
+    assert!(
+        !source.workspaces[source.active_workspace_idx].hidden(),
+        "source monitor must not fall back to another hidden workspace"
+    );
+    assert!(
+        source.workspaces[source.active_workspace_idx]
+            .name()
+            .is_none(),
+        "source monitor leftover must be unnamed"
+    );
+
+    let (mon, _, _) = layout
+        .workspaces()
+        .find(|(_, _, ws)| ws.name().map(String::as_str) == Some("github"))
+        .unwrap();
+    assert_eq!(mon.unwrap().output_name(), "output2");
+}
+
+#[test]
 fn overview_switch_to_hidden_does_not_inflate_strip() {
     let config = Config::parse_mem(
         r#"

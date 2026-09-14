@@ -874,6 +874,16 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch = None;
         self.clean_up_workspaces();
 
+        // Hidden workspaces are shortcut-only. After moving the focused one to another
+        // monitor, the leftover must be an unnamed strip slot, not the previous hidden.
+        if self.workspaces[self.active_workspace_idx].hidden() {
+            if let Some(i) = self.nth_non_hidden(0) {
+                self.active_workspace_idx = i;
+            } else if let Some(i) = self.workspaces.iter().position(|ws| !ws.hidden()) {
+                self.active_workspace_idx = i;
+            }
+        }
+
         ws
     }
 
